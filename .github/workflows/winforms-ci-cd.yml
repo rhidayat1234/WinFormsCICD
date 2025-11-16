@@ -1,0 +1,62 @@
+name: Windows Forms CI/CD
+
+on:
+  # Pemicu saat ada push ke 'main' atau tag baru
+  push:
+    branches: [ "main" ]
+    tags: 
+      - 'v*.*.*' # Memicu CD/Deployment saat tag dengan format vX.Y.Z didorong
+  # Mengizinkan trigger manual dari antarmuka GitHub
+  workflow_dispatch: 
+
+jobs:
+  build-and-package:
+    runs-on: windows-latest 
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '9.0.x' # Gunakan versi 9.0.x
+        
+    - name: Restore dependencies
+      run: dotnet restore
+      
+    - name: Build and Test (CI)
+      run: dotnet build --configuration Release --no-restore
+        
+    # Packaging (CD - Part 1)
+    - name: Publish/Package Windows Forms App
+      run: dotnet publish WinFormsApp/WinFormsApp.csproj --configuration Release --output package
+      
+    # Kompresi untuk Deployment
+    - name: Compress Release Package
+      run: Compress-Archive -Path package\* -DestinationPath WinFormsApp.zip
+      shell: powershell
+      
+    # Deployment ke GitHub Releases (CD - Part 2)
+    - name: Create GitHub Release
+      if: startsWith(github.ref, 'refs/tags/')
+      id: create_release 
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ github.ref }} 
+        name: Release ${{ github.ref }} 
+        body: |
+          Rilis otomatis untuk WinFormsApp menggunakan .NET 9.0.
+        draft: false
+        prerelease: false
+        
+    - name: Upload Release Asset
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: WinFormsApp.zip
+        asset_name: WinFormsApp-${{ github.ref_name }}.zip
+        asset_content_type: application/zip
